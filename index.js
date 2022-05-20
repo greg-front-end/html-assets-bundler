@@ -5,26 +5,32 @@ const { createReadStream, createWriteStream, rm, access, mkdir, writeFile } = re
 
 createDistDir();
 
-function BundleHTML() {
-  const streamHtmlTemplate = createReadStream(path.resolve(__dirname, 'template.html'));
-  streamHtmlTemplate.on('data', (template) => {
-    let htmlTemplate = template.toString();
+async function bundleHTML() {
+  const template = createReadStream(path.resolve(__dirname, 'template.html'), { encoding: 'utf-8' });
+  let mainHtml = '';
 
-    fs.readdir(path.join(__dirname, 'components'), { withFileTypes: true }, (err, htmlComponents) => {
-      if (err) throw err;
-      for (let html of htmlComponents) {
-        const streamHtmlComponents = createReadStream(path.join(__dirname, 'components', html.name));
-        streamHtmlComponents.on('data', (chunk) => {
-          if (htmlTemplate.includes(`{{${html.name.split('.')[0]}}}`)) {
-            htmlTemplate = htmlTemplate.replace(`{{${html.name.split('.')[0]}}}`, chunk.toString());
-            writeFile(path.join(__dirname, 'project-dist', 'index.html'), htmlTemplate, (err) => {
-              if (err) throw err;
-            });
-          }
-        });
-      }
-    });
-  });
+  for await (const chunk of template) {
+    mainHtml += chunk;
+  }
+  while (mainHtml.indexOf('{{') !== -1) {
+    const start = mainHtml.indexOf('{{');
+    const end = mainHtml.indexOf('}}');
+    const component = await getComponent(`${mainHtml.slice(start + 2, end)}.html`);
+    mainHtml = mainHtml.replace(mainHtml.slice(start - 4, end + 2), component);
+  }
+  const writeStream = createWriteStream(path.join(__dirname, 'project-dist', 'index.html'), { encoding: 'utf-8' });
+  writeStream.write(mainHtml);
+}
+
+async function getComponent(compName) {
+
+  const component = createReadStream(path.join(__dirname, 'components', compName));
+  let componentStr = '';
+
+  for await (const chunk of component) {
+    componentStr += chunk;
+  }
+  return componentStr;
 }
 
 function createDistDir() {
